@@ -1,11 +1,9 @@
 #include <p12f629.inc>
-processor p12f629
 
 ; ---------------------------------------------------------------------
 ;   feature enhanced SNES CIC clone for PIC Microcontroller (key mode only)
 ;
-;   Copyright (C) 2010 by Maximilian Rehkopf (ikari_01) <otakon@gmx.net>
-;   This software is part of the sd2snes project.
+;   Copyright (C) 2015 by René Richard (db) <rene@db-elec.com>
 ;
 ;   Based on reverse engineering work and disassembly by segher,
 ;   http://hackmii.com/2010/01/the-weird-and-wonderful-cic/
@@ -95,7 +93,7 @@ isr
 	bsf	INTCON, 7	; re-enable interrupts (ISR will continue as main)
 	goto	main
 init
-	org 0x0010
+	org	0x0010
 	banksel GPIO
 	clrf	GPIO
 	movlw	0x07	; GPIO2..0 are digital I/O (not connected to comparator)
@@ -116,10 +114,10 @@ idle
 	goto	idle	; wait for interrupt from lock
 
 main
-	banksel	TRISIO
-	bsf	TRISIO, 0
-	bcf	TRISIO, 1
-	banksel	GPIO
+	banksel	TRISIO	    ;1
+	bsf	TRISIO, 0   ;1
+	bcf	TRISIO, 1   ;1
+	banksel	GPIO	    ;1
 ; --------INIT LOCK SEED (what the lock sends)--------
 	movlw	0xb
 	movwf	0x21
@@ -150,7 +148,7 @@ main
 	movlw	0x9
 	movwf 	0x2e
 	movlw	0x8
-	movwf 	0x2f
+	movwf 	0x2f		; 34 cycles
 	
 ; --------INIT KEY SEED (what we must send)--------
 	banksel	EEADR		; D/F411 and D/F413
@@ -183,12 +181,13 @@ main
 	movlw	0xe
 	movwf 	0x3e
 	movlw	0xc
-	movwf 	0x3f
+	movwf 	0x3f		; 31 cycles
 	
 ; --------wait for stream ID--------
 	movlw	0xb5
-	call	wait
+	call	wait		; 11 cycles
 	clrf	0x31		; clear lock stream ID
+				; 11 + 2 = 13 cycles
 
 ; --------lock sends stream ID. 15 cycles per bit--------
 ;	bsf	GPIO, 0		; (debug marker)
