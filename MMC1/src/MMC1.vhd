@@ -39,6 +39,9 @@ entity MMC1 is
 
 	port (
 			--reset generator (if required)
+			--note there are ports specified here which are not required
+			--for MMC1, this is because the PCB will support other mappers as
+			--well
 			nRST_p			:	in 	std_logic;
 	
 			--input from NES
@@ -47,6 +50,7 @@ entity MMC1 is
 			nROMSEL_p		:  in		std_logic;
 			CPUA14_p			:	in 	std_logic;
 			CPUA13_p			:	in 	std_logic;
+			CPUA0_p			:	in		std_logic;
 			nPPUA13_p		:	in		std_logic;
 			PPUA13_p			:  in    std_logic;
 			PPUA12_p			:  in    std_logic;
@@ -58,6 +62,7 @@ entity MMC1 is
 			CLK_p				:  in		std_logic;
 
 			--output to Program ROM / WRAM
+			PRGA18_p			:	out	std_logic;
 			PRGA17_p			:  out	std_logic;
 			PRGA16_p			:  out	std_logic;
 			PRGA15_p			:  out	std_logic;
@@ -67,6 +72,7 @@ entity MMC1 is
 			nWRAMCE_p		:  out   std_logic;
 			
 			--output to Character ROM
+			CHRA17_p			:  out	std_logic;
 			CHRA16_p			:  out	std_logic;
 			CHRA15_p			:  out	std_logic;
 			CHRA14_p			:  out	std_logic;
@@ -146,6 +152,7 @@ begin
 	CHRA14_p <= ChrAddr16to12_s(2);
 	CHRA15_p <= ChrAddr16to12_s(3);
 	CHRA16_p <= ChrAddr16to12_s(4);
+	CHRA17_p <= '0';
 	CHRBanking : process (PPUA13_p, PPUA12_p)
 	begin
 		--check bank size
@@ -172,6 +179,7 @@ begin
 	PRGA15_p <= RomAddr17to14_s(1);
 	PRGA16_p <= RomAddr17to14_s(2);
 	PRGA17_p <= RomAddr17to14_s(3);
+	PRGA18_p <= '0';
 	PRGBanking : process (nROMSEL_p, CPUA14_p)
 	begin
 		--check bank size
