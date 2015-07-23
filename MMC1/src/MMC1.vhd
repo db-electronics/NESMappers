@@ -86,6 +86,7 @@ architecture MMC1_a of MMC1 is
 
 	signal RomAddr17to14_s		:	std_logic_vector(3 downto 0);
 	signal ChrAddr16to12_s		:	std_logic_vector(4 downto 0);
+	signal cpuA15_s				:  std_logic;
 	
 	signal MMCReg0_s				:  std_logic_vector(4 downto 0);
 	signal MMCReg1_s				:  std_logic_vector(4 downto 0);
@@ -98,7 +99,7 @@ architecture MMC1_a of MMC1 is
 	signal resetState				:  std_logic;
 	type 	 state_type 			is (s0,s1,s2,s3,s4);
 	signal current_s,next_s		: 	state_type;
-	signal MMCRegSel_s			:  std_logic_vector(1 downto 0);
+	signal cpuAddr15to13_s		:  std_logic_vector(2 downto 0);
 	
 begin
 
@@ -108,10 +109,18 @@ begin
 	--CIRAM always enabled
 	nCIRAMCE_p <= nPPUA13_p;
 	
+	--determine A15
+	cpuA15_s <= '0' when (M2_p = '1' and nROMSEL_p = '0') else '1';
+	
+	--group higher addresses for easier reading
+	cpuAddr15to13_s <= cpuA15_s & CPUA14_p & CPUA13_p;
+	
 	--**************************************************************
 	--WRAM
 	--CPU $6000-$7FFF: 8 KB PRG RAM bank, fixed on all boards but SOROM and SXROM
-	
+	--M2 is high when address is valid
+	--0b0110 -> 0b0111
+	nWRAMCE_p <= '0' when (M2_p = '1' and cpuAddr15to13_s = "011" and MMCReg3_s(4) = '0') else '1';
 	
 	--**************************************************************	
 	--Mirroring
@@ -196,20 +205,17 @@ begin
 	
 	--write to mapper registers state machine
 	--use A14 and A13 to determine the register being written to
-	MMCRegSel_s <= CPUA14_p & CPUA13_p;
 	--The first bit in is the LSB, while the last bit in is the MSB.
 	process (nROMSEL_p, CPURnW_p)
 	begin
-		if (resetState = '1') then
-			current_s <= s0;  --default state on reset.
-		elsif (falling_edge(CPURnW_p)) then
+		if (falling_edge(CPURnW_p)) then
 			if (nROMSEL_p = '0') then
 				current_s <= next_s;   --state change.
 			end if;
 		end if;
 	end process;
 	
-	process (current_s, CPUDATA_p)
+	process (current_s, CPUDATA_p, nROMSEL_p)
 	begin
 		if (rising_edge(nROMSEL_p)) then
 			if (CPURnW_p = '0') then
@@ -217,7 +223,7 @@ begin
 					when s0 =>
 						if (CPUDATA_p(7) = '1') then
 							next_s <= s0;
-							case MMCRegSel_s is
+							case cpuAddr15to13_s(1 downto 0) is
 								when "00" =>
 									MMCReg0_s <= "01100";
 								when "01" =>
@@ -235,7 +241,7 @@ begin
 					when s1 =>
 						if (CPUDATA_p(7) = '1') then
 							next_s <= s0;
-							case MMCRegSel_s is
+							case cpuAddr15to13_s(1 downto 0) is
 								when "00" =>
 									MMCReg0_s <= "01100";
 								when "01" =>
@@ -253,7 +259,7 @@ begin
 					when s2 =>
 						if (CPUDATA_p(7) = '1') then
 							next_s <= s0;
-							case MMCRegSel_s is
+							case cpuAddr15to13_s(1 downto 0) is
 								when "00" =>
 									MMCReg0_s <= "01100";
 								when "01" =>
@@ -271,7 +277,7 @@ begin
 					when s3 =>
 						if (CPUDATA_p(7) = '1') then
 							next_s <= s0;
-							case MMCRegSel_s is
+							case cpuAddr15to13_s(1 downto 0) is
 								when "00" =>
 									MMCReg0_s <= "01100";
 								when "01" =>
@@ -289,7 +295,7 @@ begin
 					when s4 =>
 						if (CPUDATA_p(7) = '1') then
 							next_s <= s0;
-							case MMCRegSel_s is
+							case cpuAddr15to13_s(1 downto 0) is
 								when "00" =>
 									MMCReg0_s <= "01100";
 								when "01" =>
@@ -300,7 +306,7 @@ begin
 									MMCReg3_s <= "00000";
 							end case;
 						else
-							case MMCRegSel_s is
+							case cpuAddr15to13_s(1 downto 0) is
 								when "00" =>
 									MMCReg0_s(3 downto 0) <= tempReg_s(4 downto 1);
 									MMCReg0_s(4) <= CPUDATA_p(0);
