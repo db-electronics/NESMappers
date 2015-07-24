@@ -31,7 +31,7 @@
         <targetDevice>PIC12F629</targetDevice>
         <targetHeader></targetHeader>
         <targetPluginBoard></targetPluginBoard>
-        <platformTool>PICkit3PlatformTool</platformTool>
+        <platformTool>Simulator</platformTool>
         <languageToolchain>MPASMWIN</languageToolchain>
         <languageToolchainVersion>5.62</languageToolchainVersion>
         <platform>3</platform>

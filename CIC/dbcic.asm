@@ -1,12 +1,11 @@
 #include <p12f629.inc>
 
 ; ---------------------------------------------------------------------
-;   feature enhanced SNES CIC clone for PIC Microcontroller (key mode only)
-;
-;   Copyright (C) 2015 by René Richard (db) <rene@db-elec.com>
-;
-;   Based on reverse engineering work and disassembly by segher,
+;   NES multi-region CIC heavily inspired from SUPER CIC which is itslelf
+;   based on reverse engineering work and disassembly by segher,
 ;   http://hackmii.com/2010/01/the-weird-and-wonderful-cic/
+;   
+;   Copyright (C) 2015 by René Richard (db) <rene@db-elec.com>
 ;
 ;   This program is free software; you can redistribute it and/or modify
 ;   it under the terms of the GNU General Public License as published by
@@ -23,14 +22,14 @@
 ;
 ; ---------------------------------------------------------------------
 ;
-;   pin configuration: (cartridge pin) [key CIC pin]
+;   pinout :  CIC pin]
 ;
-;                       ,---_---.
-;      +5V (27,58) [16] |1     8| GND (5,36) [8]
-;      CIC clk (56) [6] |2     7| CIC data i/o 0 (55) [2]
-;            status out |3     6| CIC data i/o 1 (24) [1]
-;                 /PAIR |4     5| CIC slave reset (25) [7]
-;                       `-------'
+;                   ,---_---.
+;      +5V     [16] |1     8| GND [8]
+;      CIC clk [6]  |2     7| CIC data out 0 [2]
+;        status out |3     6| CIC data in  1 [1]
+;             /NTSC |4     5| CIC slave reset [7]
+;                   `-------'
 ;
 ;
 ;   Status out can be connected to a LED. It indicates:
@@ -39,19 +38,9 @@
 ;  -------------------------+----------------------------
 ;   OK or no lock CIC       | high
 ;   error                   | low
-;   SuperCIC pair mode      | 148.75kHz / 50% duty cycle
 ;
 ;   In case lockout fails, the region is switched automatically and
 ;   will be used after the next reset.
-;
-;   The /PAIR pin can be used to enable or disable SuperCIC pair mode.
-;   It can be tied low or high to statically enable or disable pair mode
-;   detection, or connected to a switch or MCU to dynamically enable pair
-;   mode detection (it should then be connected to a pull-up resistor to
-;   Vcc). Pair mode detection can be enabled during operation,
-;   but pair mode cannot be left until the next power cycle.
-;   See SuperCIC lock documentation for a more detailed description of
-;   pair mode.
 ;
 ;   memory usage:
 ;
@@ -117,81 +106,62 @@ main
 	banksel	TRISIO	    ;1
 	bsf	TRISIO, 0   ;1
 	bcf	TRISIO, 1   ;1
-	banksel	GPIO	    ;1
+			    ;3 cycles
+	
 ; --------INIT LOCK SEED (what the lock sends)--------
-	movlw	0xb
-	movwf	0x21
-	movlw	0x1
-	movwf	0x22
-	movlw	0x4
-	movwf	0x23
-	movlw	0xf
-	movwf	0x24
-	movlw	0x4
-	movwf 	0x25
-	movlw	0xb
-	movwf 	0x26
-	movlw	0x5
-	movwf 	0x27
-	movlw	0x7
-	movwf 	0x28
-	movlw	0xf
-	movwf 	0x29
-	movlw	0xd
-	movwf 	0x2a
-	movlw	0x6
-	movwf 	0x2b
-	movlw	0x1
-	movwf 	0x2c
-	movlw	0xe
-	movwf 	0x2d
-	movlw	0x9
-	movwf 	0x2e
-	movlw	0x8
-	movwf 	0x2f		; 34 cycles
+; new code by db to set the NES lock and key seeds, read from eeprom
 	
-; --------INIT KEY SEED (what we must send)--------
-	banksel	EEADR		; D/F411 and D/F413
-	clrf	EEADR		; differ in 2nd seed nibble
-	bsf	EECON1, RD	; of key stream,
-	movf	EEDAT, w	; restore saved nibble from EEPROM
-	banksel GPIO
-	movwf	0x32
-	movlw	0xa
-	movwf	0x33
-	movlw	0x1
-	movwf	0x34
-	movlw	0x8
-	movwf 	0x35
-	movlw	0x5
-	movwf 	0x36
-	movlw	0xf
-	movwf 	0x37
-	movlw	0x1
-	movwf 	0x38
-	movwf 	0x39
-	movlw	0xe
-	movwf 	0x3a
-	movlw	0x1
-	movwf 	0x3b
-	movlw	0x0
-	movwf 	0x3c
-	movlw	0xd
-	movwf 	0x3d
-	movlw	0xe
-	movwf 	0x3e
-	movlw	0xc
-	movwf 	0x3f		; 31 cycles
+	banksel	EEADR	    ; 1
+	movlw	0x0F	    ; 1
+	movwf	EEADR	    ; 1 - point to region byte
+	bsf	EECON1,RD   ; 1 - read eeprom
+	movf	EEDATA,W    ; 1 - read into wreg
+	movwf	EEADR	    ; 1 - it contained a pointer into EE memory
+			    ; 6 + 3
+	    ; prepare fsr for lock in 0x21 - 0x2f
+	movlw	0x21	    ; 1 - point to lock seed mem
+	movwf	FSR	    ; 1 - in FSR
+	movlw	0x0F	    ; 1 - 15 values to load
+	movwf	0xCF	    ; 1 - store
+			    ; 13 cycles
+lockload	
+	bsf	EECON1,RD   ; 1 - read eeprom
+	movf	EEDATA,W    ; 1 - read
+	movwf	INDF	    ; 1 - store to ram
+	incf	FSR	    ; 1 - inc ram pointer
+	incf	EEADR	    ; 1 - inc eeprom pointer
+	decfsz	0xCF	    ; 1/2 - iteration variable decrement
+			    ; (6 x 15) + 1 = 91
+	goto	lockload    ; 2
+			    ; 93 + 13 cycles
 	
-; --------wait for stream ID--------
-	movlw	0xb5
-	call	wait		; 11 cycles
-	clrf	0x31		; clear lock stream ID
-				; 11 + 2 = 13 cycles
-
+	    ; now EEADR points to lock + 15
+	incf	EEADR	    ; 1 - skip 1 for align 16 data
+	incf	FSR	    ; 1 - same
+	movlw	0x0F	    ; 1 - 15 values to load
+	movwf	0xCF	    ; 1 - store
+			    ; 4 + 93 + 13 cycles
+keyload	
+	bsf	EECON1,RD   ; 1 - read eeprom
+	movf	EEDATA,W    ; 1 - read
+	movwf	INDF	    ; 1 - store to ram
+	incf	FSR	    ; 1 - inc ram pointer
+	incf	EEADR	    ; 1 - inc eeprom pointer
+	decfsz	0xCF	    ; 1/2 - iteration variable decrement
+			    ; (6 x 15) + 1 = 91
+	goto	keyload     ; 2	
+	banksel GPIO	    ; 1
+			    ; 94 + 4 + 93 + 13 cycles
+			    ; 204
+			    ; 614 - 204 = 410
+	
+	; 31 load lock super cic
+	; 34 load key super cic
+	; 1 load 181 into wreg
+	; call wait with 181 = 547	
+	; 614 cycles from main
+			
 ; --------lock sends stream ID. 15 cycles per bit--------
-;	bsf	GPIO, 0		; (debug marker)
-;	bcf	GPIO, 0		; 
 	btfsc	GPIO, 0		; check stream ID bit
 	bsf	0x31, 3		; copy to lock seed
 	movlw	0x2		; wait=3*W+5
@@ -199,8 +169,6 @@ main
 	nop
 	nop
 
-;	bsf	GPIO, 0
-;	bcf	GPIO, 0
 	btfsc	GPIO, 0		; check stream ID bit
 	bsf	0x31, 0		; copy to lock seed
 	movlw	0x2		;
@@ -208,8 +176,6 @@ main
 	nop
 	nop
 
-;	bsf	GPIO, 0
-;	bcf	GPIO, 0
 	btfsc	GPIO, 0		; check stream ID bit
 	bsf	0x31, 1		; copy to lock seed
 	movlw	0x2		;
@@ -217,8 +183,6 @@ main
 	nop
 	nop
 
-;	bsf	GPIO, 0
-;	bcf	GPIO, 0
 	btfsc	GPIO, 0		; check stream ID bit
 	bsf	0x31, 2		; copy to lock seed
 	banksel	TRISIO
@@ -228,6 +192,7 @@ main
 	nop
 	movlw	0x27		; "wait" 1
 	call	wait		; wait 121
+				; 3*(39-1)+7 = 121
 ; --------main loop--------
 loop	
 	movlw	0x1
@@ -657,11 +622,11 @@ scic_pair_skip3
 ; CIC has 84 -> 11 nops
 
 ; --------wait: 3*(W-1)+7 cycles (including call+return). W=0 -> 256!--------
-wait	
-	movwf	0x4f
-wait0	decfsz	0x4f, f
-	goto	wait0
-	return	
+wait			    ; 2 for call
+	movwf	0x4f	    ; 1
+wait0	decfsz	0x4f, f	    ; 1 / 2 last pass
+	goto	wait0	    ; 2
+	return		    ; 2
 
 ; --------wait long: 8+(3*(w-1))+(772*w). W=0 -> 256!--------
 longwait
@@ -724,7 +689,30 @@ supercic_pairmode_loop
 	bcf	GPIO, 4
 	goto	supercic_pairmode_loop
 
-; eeprom memory
-DEEPROM	CODE
-	de      0x09	; D411 (NTSC)
-end
+; eeprom memory	
+DEEPROM code
+;3193 - USA/Canada 
+;LOCK: 3952F20F9109997
+;KEY:  x952129F910DF97 
+	de	0x3,0x9,0x5,0x2,0xF,0x2,0x0,0xF,0x9,0x1,0x0,0x9,0x9,0x9,0x7,0
+	de	0x0,0x9,0x5,0x2,0x1,0x2,0x9,0xF,0x9,0x1,0x0,0xD,0xF,0x9,0x7,0
+	
+;3197 - UK/Italy/Australia 
+;LOCK: 558937A00E0D66D 
+;KEY:  x79AA1E0D019D99
+	de	0x5,0x5,0x8,0x9,0x3,0x7,0xA,0x0,0x0,0xE,0x0,0xD,0x6,0x6,0xD,0
+	de	0x0,0x7,0x9,0xA,0xA,0x1,0xE,0x0,0xD,0x0,0x1,0x9,0xD,0x9,0x9,0
+	
+;3195 - Europe 
+;LOCK: 17BEF0AF5706617
+;KEY:  x7BD309F6EF2F97  
+	de	0x1,0x7,0xB,0xE,0xF,0x0,0xA,0xF,0x5,0x7,0x0,0x6,0x6,0x1,0x7,0
+	de	0x0,0x7,0xB,0xD,0x3,0x0,0x9,0xF,0x6,0xE,0xF,0x2,0xF,0x9,0x7,0
+
+;3196 - Asia 
+;LOCK: 06AD70AF6EF666C
+;KEY:  x6ADCF606EF2F97  
+	de	0x0,0x6,0xA,0xD,0x7,0x0,0xA,0xF,0x6,0xE,0xF,0x6,0x6,0x6,0xC,0
+	de	0x0,0x6,0xA,0xD,0xC,0xF,0x6,0x0,0x6,0xE,0xF,0x2,0xF,0x9,0x7,0
+	
+	end
