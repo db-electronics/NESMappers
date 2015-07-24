@@ -103,6 +103,14 @@ idle
 	goto	idle	; wait for interrupt from lock
 
 main
+; super cic uses 614 cycle until lock sends stream id
+; 31 load lock super cic
+; 34 load key super cic
+; 1 load 181 into wreg
+; call wait with 181 = 547
+; clrf
+; 614 cycles from main
+	
 	banksel	TRISIO	    ;1
 	bsf	TRISIO, 0   ;1
 	bcf	TRISIO, 1   ;1
@@ -123,43 +131,44 @@ main
 	movwf	FSR	    ; 1 - in FSR
 	movlw	0x0F	    ; 1 - 15 values to load
 	movwf	0xCF	    ; 1 - store
-			    ; 13 cycles
+			    ; 4 + 6 + 3 = 13 cycles
 lockload	
 	bsf	EECON1,RD   ; 1 - read eeprom
 	movf	EEDATA,W    ; 1 - read
 	movwf	INDF	    ; 1 - store to ram
 	incf	FSR	    ; 1 - inc ram pointer
 	incf	EEADR	    ; 1 - inc eeprom pointer
-	decfsz	0xCF	    ; 1/2 - iteration variable decrement
-			    ; (6 x 15) + 1 = 91
+	decfsz	0xCF	    ; 1 (2 on skip) - iteration variable decrement
 	goto	lockload    ; 2
-			    ; 93 + 13 cycles
+			    ; loop 15 times
+			    ; (14 x 8) + 7 = 119
+			    ; 119 + 13 cycles
 	
 	    ; now EEADR points to lock + 15
 	incf	EEADR	    ; 1 - skip 1 for align 16 data
 	incf	FSR	    ; 1 - same
 	movlw	0x0F	    ; 1 - 15 values to load
 	movwf	0xCF	    ; 1 - store
-			    ; 4 + 93 + 13 cycles
+			    ; 4 + 119 + 13 cycles
 keyload	
 	bsf	EECON1,RD   ; 1 - read eeprom
 	movf	EEDATA,W    ; 1 - read
 	movwf	INDF	    ; 1 - store to ram
 	incf	FSR	    ; 1 - inc ram pointer
 	incf	EEADR	    ; 1 - inc eeprom pointer
-	decfsz	0xCF	    ; 1/2 - iteration variable decrement
-			    ; (6 x 15) + 1 = 91
+	decfsz	0xCF	    ; 1 (2 on skip) - iteration variable decrement
 	goto	keyload     ; 2	
 	banksel GPIO	    ; 1
-			    ; 94 + 4 + 93 + 13 cycles
-			    ; 204
-			    ; 614 - 204 = 410
-	
-	; 31 load lock super cic
-	; 34 load key super cic
-	; 1 load 181 into wreg
-	; call wait with 181 = 547	
-	; 614 cycles from main
+			    ; loop 15 times
+			    ; (14 x 8) + 7 + 1 = 120
+			    ; total = 120 + 4 + 119 + 13 = 256
+			    ; 614 - 256 = 358
+
+; need to burn 358 cycles
+	movlw	0x75	    ; 1 - load 117
+	call	wait	    ; wait = (3*(W-1)) + 7 = 355
+	nop		    ; 1
+	nop		    ; 1
 			
 ; --------lock sends stream ID. 15 cycles per bit--------
 	btfsc	GPIO, 0		; check stream ID bit
@@ -639,24 +648,22 @@ longwait0
 	return
 
 ; --------change region in eeprom and die--------
+; new code by db, need to change the region in eeprom
+; region points to the start of the region's lock seed in eeprom
+; 0x00 = 3193 - USA/Canada
+; 0x20 = 3197 - UK/Italy/Australia
+; 0x40 = 3195 - Europe 
+; 0x60 = 3196 - Asia 
+;   so, to change region, add 0x20 and AND with 0x60 to ensure no unwanted bits
 die
 	banksel	EEADR
-	clrw
-	movwf	EEADR
-	bsf	EECON1, RD
-	movf	EEDAT, w
-	banksel	GPIO
-	movwf	0x4d
-	btfsc	0x4d, 0
-	goto	die_reg_6
-die_reg_9
-	movlw	0x9	; died with PAL, fall back to NTSC
-	goto	die_reg_cont
-die_reg_6
-	movlw	0x6	; died with NTSC, fall back to PAL
-die_reg_cont
-	banksel	EEADR
-	movwf	EEDAT
+	movlw	0x0F	    ; point to region
+	movwf	EEADR	    ; store to address
+	bsf	EECON1,RD   ; read eeprom
+	movf	EEDATA,W    ; move to wreg
+	addlw	0x20	    ; add 0x20 for next region
+	andlw	0x60	    ; fix overflow at 128
+	movwf	EEDATA	    ; store back to eeprom
 	bsf	EECON1, WREN
 
 die_intloop
@@ -666,7 +673,7 @@ die_intloop
 	
 	movlw	0x55
 	movwf	EECON2
-	movlw	0xaa
+	movlw	0xAA
 	movwf	EECON2
 	bsf	EECON1, WR
 	bsf	INTCON, GIE
@@ -689,7 +696,9 @@ supercic_pairmode_loop
 	bcf	GPIO, 4
 	goto	supercic_pairmode_loop
 
-; eeprom memory	
+; eeprom memory
+;   the 16th byte of each seed is unused, therefore, I used addr 0x0F to store
+;   the current region since 12F629 only has 128 bytes of eeprom
 DEEPROM code
 ;3193 - USA/Canada 
 ;LOCK: 3952F20F9109997
